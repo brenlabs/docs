@@ -1,0 +1,62 @@
+---
+title: "Products"
+description: "What the agent is being tested against."
+icon: "box"
+---
+
+A **product** represents the system an agent will be evaluated on. It might
+be your own SaaS application, a third-party API the agent needs to integrate
+with, or simply a placeholder for offline scenarios that don't touch any URL.
+
+Every [run](/concepts/runs) must be attached to a product, even when the
+scenario is purely text-based — products are how brenlabs organises history,
+health rollups, and access control.
+
+## Key fields
+
+| Field | Description |
+|---|---|
+| `id` | Stable identifier, prefixed `prod_`. |
+| `name` | Display name. Free text. |
+| `slug` | URL-safe identifier, unique per org. `[a-z0-9][a-z0-9-]{0,62}`. |
+| `description` | Short summary of what the product is. |
+| `url` | The product's base URL. Optional but needed if the agent will call it. |
+| `ax_metadata` | Free-form JSON for any product context you want available to scenarios. |
+| `created_by` | Member who created the product. |
+
+## Environments
+
+Each product can have multiple **environments** — staging, prod, a per-PR
+preview, your own laptop. Environments carry auth credentials and base URLs
+that override the parent product's `url` for a given run.
+
+| Field | Description |
+|---|---|
+| `id` | Prefixed `env_`. |
+| `slug` | Unique within the product. |
+| `url` | Overrides the product URL for runs that select this environment. |
+| `secret_refs` | Map of HTTP header names → `${secret:name}` references resolved at run time. |
+| `basic_auth_ref` | Reference to a stored Basic Auth credential. |
+
+Scenarios run against the product without specifying an environment by
+default. Pick one when the run needs particular credentials or a non-default
+base URL.
+
+## Health
+
+brenlabs computes a rolling **health** label per product based on the last
+seven days of runs:
+
+| Label | Meaning |
+|---|---|
+| `onboarding` | No runs yet, or product has no `url` configured. |
+| `healthy` | Pass rate ≥ 60% across terminal runs. |
+| `regression` | Pass rate < 60%. |
+
+Health is purely advisory and surfaced in the product list view.
+
+## Soft delete
+
+Deleting a product is a soft-delete — the row is hidden but kept for audit.
+A product cannot be deleted while any runs against it are still active
+(states `queued`, `preparing`, `running`, `evaluating`). Cancel them first.

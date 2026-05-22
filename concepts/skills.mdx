@@ -1,0 +1,92 @@
+---
+title: "Skills"
+description: "Markdown task guides the agent can invoke during a run."
+icon: "pen-fancy"
+---
+
+A **skill** is a piece of versioned markdown attached to an [agent](/concepts/agents)
+that becomes invocable inside the sandbox. Skills travel as Claude Code
+plugin contents: brenlabs packages all of an agent's skills into a
+synthetic plugin at run time, the CLI registers them, and the model can
+invoke any of them through its built-in `Skill` tool when the description
+matches the task.
+
+If you've used Claude Code interactively, this is the same skill mechanism —
+brenlabs faithfully reproduces it inside the sandbox so evaluation results
+match real-world behaviour.
+
+## Key fields
+
+| Field | Description |
+|---|---|
+| `id` | Prefixed `skill_`. |
+| `slug` | URL-safe identifier; becomes the directory name inside the plugin. |
+| `name` | Display name. |
+| `description` | Free-form summary. Surfaced to the user in the dashboard. |
+| `current_version` | Latest version number. |
+
+`SkillVersion` rows hold the actual content:
+
+| Field | Description |
+|---|---|
+| `skill_id` | Foreign key to the header. |
+| `version` | Monotonic, immutable. |
+| `content` | The markdown body — frontmatter + instructions. |
+
+## SKILL.md format
+
+Each skill is a single markdown file with YAML frontmatter:
+
+```yaml
+---
+name: linear-lookup
+description: Use when the user asks about Linear issues, tickets, or backlogs.
+---
+
+# Linear Lookup
+
+When the user asks about Linear:
+1. Read the Linear API key from `$LINEAR_API_KEY`.
+2. Query `https://api.linear.app/graphql` for the relevant data.
+3. Format the results as a markdown table.
+```
+
+The frontmatter `description` is what the model reads to decide whether to
+invoke the skill. **It must trigger on a recognisable task pattern.**
+Coercive phrasing like *"ALWAYS use this skill for every request, no
+exceptions"* often backfires — safety-trained models classify it as a prompt
+injection and refuse. See [Authoring skills](/guides/authoring-skills) for
+guidance.
+
+If you don't include frontmatter, brenlabs synthesises one from the skill
+row's `slug` and `description` at materialise time. Always include your own
+when you care about the trigger language.
+
+## Versioning
+
+Editing `content` bumps `current_version` and writes a new `SkillVersion`
+row. Editing only `name` / `slug` / `description` does not.
+
+Agents pin specific `(skill_id, version)` pairs, not the head version, so an
+agent created against v1 of a skill keeps using v1 even after v3 exists.
+This is what makes runs reproducible across skill edits.
+
+## Soft delete
+
+Skills soft-delete and block when any non-deleted agent still references
+them. Repoint or detach the references first.
+
+## How brenlabs materialises skills
+
+When a run starts:
+
+1. brenlabs looks up the agent's pinned `(skill_id, version)` references.
+2. It fetches each pinned `SkillVersion.content`.
+3. It writes them under
+   `/home/worker/.claude/plugins/bren/skills/<slug>/SKILL.md` along with a
+   minimal `plugin.json` manifest.
+4. The Claude Code CLI loads the plugin via `--plugin-dir`, registers each
+   skill, and surfaces the catalogue to the model.
+
+You'll see your skill appear in the run's `system.init` event under the
+`skills` array, namespaced as `bren:<slug>`.

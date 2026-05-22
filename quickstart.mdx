@@ -1,81 +1,173 @@
 ---
 title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+description: "Sign up, create your first agent, and run a scenario in under five minutes."
+icon: "rocket"
 ---
 
-## Get started in three steps
+This walkthrough takes you from a fresh account to a completed agent run via
+the brenlabs API. Everything here is also doable in the dashboard at
+[bren.run](https://bren.run) — the API path is shown so you can script it.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+- A brenlabs account at [bren.run](https://bren.run). The MVP is password-only,
+  no social login.
+- `curl` and `jq` for the examples below.
+- An [Anthropic Console API key](https://console.anthropic.com/settings/keys)
+  if you plan to run Claude Code agents at scale — OAuth tokens work but
+  expire roughly every eight hours.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+## 1. Get an access token
 
-### Step 2: Deploy your changes
+After signing up, the dashboard issues a session JWT. Copy it from your
+**Profile → API access** page or grab it from a logged-in browser session.
+Export it for use below:
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+```bash
+export BREN_JWT="eyJhbGciOi..."   # your session JWT
+export BREN_ORG="org_..."         # your org id, visible in the dashboard URL
+```
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+All API calls require both an `Authorization: Bearer <jwt>` header and an
+`X-Org-Id: <org>` header to scope the request.
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+## 2. Register a product
 
-### Step 3: Go live
+A **product** is the system the agent will be tested against. Even if your
+scenario doesn't actually call the product URL (e.g. for a pure docs-writing
+test), brenlabs requires every run to be attached to one.
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+```bash
+curl -sS -X POST https://api.bren.run/v1/products \
+  -H "Authorization: Bearer $BREN_JWT" \
+  -H "X-Org-Id: $BREN_ORG" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Linear",
+    "slug": "linear",
+    "description": "Linear issue tracker",
+    "url": "https://linear.app"
+  }' | jq '.id'
+```
+
+Save the returned `prod_…` id.
+
+## 3. Create an agent
+
+An **agent** is the configuration you're testing — which underlying tool
+(`claude-code`, `codex`), which model, which skills, which MCP servers. Agents
+are reusable across scenarios.
+
+```bash
+curl -sS -X POST https://api.bren.run/v1/agents \
+  -H "Authorization: Bearer $BREN_JWT" \
+  -H "X-Org-Id: $BREN_ORG" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "claude-code-default",
+    "slug": "claude-code-default",
+    "agent_type": "claude-code",
+    "model": "claude-haiku-4-5",
+    "system_prompt": "You are a focused engineer. Read the scenario carefully before acting."
+  }' | jq '.id'
+```
+
+Save the returned `ag_…` id.
+
+## 4. Write a scenario
+
+A **scenario** carries the task description shown to the agent plus the
+success criteria the judge will use. Criteria stay server-side — the agent
+never sees them.
+
+```bash
+curl -sS -X POST https://api.bren.run/v1/scenarios \
+  -H "Authorization: Bearer $BREN_JWT" \
+  -H "X-Org-Id: $BREN_ORG" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "smoke-test",
+    "slug": "smoke-test",
+    "description_template": "Print the current date in ISO-8601 format.",
+    "success_criteria": "The agent printed a valid ISO-8601 date string in its final response."
+  }' | jq '.id'
+```
+
+Save the returned `scen_…` id.
+
+## 5. Start a run
+
+A **run** binds a product, agent, and scenario together and kicks off
+execution.
+
+```bash
+curl -sS -X POST https://api.bren.run/v1/runs \
+  -H "Authorization: Bearer $BREN_JWT" \
+  -H "X-Org-Id: $BREN_ORG" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "product_id": "prod_...",
+    "agent_id":   "ag_...",
+    "scenario_id":"scen_..."
+  }' | jq '.id'
+```
+
+You'll get back a `run_…` id immediately. The run executes asynchronously.
+
+## 6. Watch the run
+
+Stream the live event channel:
+
+```bash
+curl -N "https://api.bren.run/v1/runs/run_.../stream" \
+  -H "Authorization: Bearer $BREN_JWT" \
+  -H "X-Org-Id: $BREN_ORG"
+```
+
+Or poll for the final state:
+
+```bash
+curl -sS "https://api.bren.run/v1/runs/run_..." \
+  -H "Authorization: Bearer $BREN_JWT" \
+  -H "X-Org-Id: $BREN_ORG" \
+  | jq '{state, judge_passed, judge_confidence, state_reason}'
+```
+
+## What just happened
+
+<Steps>
+  <Step title="Sandbox creation">
+    brenlabs created a Modal sandbox from the `claude-code` base image, with
+    your agent's MCP config and skills materialised onto its filesystem.
+  </Step>
+  <Step title="Agent execution">
+    The CLI ran inside the sandbox with the scenario as stdin. Every tool
+    call, thinking block, and text response streamed back to brenlabs.
+  </Step>
+  <Step title="Judge evaluation">
+    A separate model read the full transcript and your hidden criteria,
+    then produced a structured verdict.
+  </Step>
+  <Step title="Archive">
+    Raw event log and analysis JSON were uploaded to object storage so the
+    run is replayable later.
+  </Step>
+</Steps>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+<Columns cols={2}>
+  <Card title="Add skills" icon="pen-fancy" href="/guides/authoring-skills">
+    Write SKILL.md content the agent can use — Linear, Mintlify, your own
+    internal workflows.
+  </Card>
+  <Card title="Wire MCP servers" icon="plug" href="/guides/wiring-mcps">
+    Attach Linear, Mintlify, Sentry, or any HTTP/stdio MCP to your agent.
+  </Card>
+  <Card title="Understand the entities" icon="diagram-project" href="/concepts/products">
+    Tour through products, agents, scenarios, skills, and runs.
+  </Card>
+  <Card title="Full API reference" icon="terminal" href="/api-reference/openapi">
+    All 49 endpoints, OpenAPI-generated.
+  </Card>
+</Columns>

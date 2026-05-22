@@ -1,0 +1,134 @@
+---
+title: "Wiring MCP servers"
+description: "Attach Linear, Mintlify, or any HTTP/stdio MCP server to an agent."
+icon: "plug"
+---
+
+Model Context Protocol (MCP) servers give an [agent](/concepts/agents) extra
+tools beyond `Bash`/`Edit`/`Read` — issue trackers, observability platforms,
+your own internal APIs. brenlabs wires them in by writing a `.mcp.json` into
+the sandbox at run time and passing it to the Claude Code CLI.
+
+## Configuration shape
+
+Each MCP server is an entry in `agent.mcps`:
+
+```json
+{
+  "name": "linear",
+  "transport": "http",
+  "url": "https://mcp.linear.app/mcp",
+  "env": {
+    "LINEAR_API_KEY": "${secret:linear}"
+  }
+}
+```
+
+| Field | Description |
+|---|---|
+| `name` | Identifier visible to the CLI. Becomes the prefix for tool names (e.g. `mcp__linear__search`). |
+| `transport` | `http`, `sse`, or `stdio`. |
+| `url` | For HTTP/SSE transports. |
+| `command`, `args` | For `stdio` transport — the binary to spawn. |
+| `env` | Map of env-var names → values. `${secret:<name>}` references are resolved from your org's secret store at run time. |
+
+The whole entry is written verbatim into the sandbox's `.mcp.json` (minus
+`env`, which becomes inherited process environment instead — see below).
+
+## Secrets
+
+Hardcoding API keys in `env` works but leaks them into the run snapshot and
+event log. Use [secrets](/api-reference/secrets) instead.
+
+<Steps>
+  <Step title="Create the secret">
+    ```bash
+    curl -X POST https://api.bren.run/v1/secrets \
+      -H "Authorization: Bearer $BREN_JWT" -H "X-Org-Id: $BREN_ORG" \
+      -H "Content-Type: application/json" \
+      -d '{"name": "linear", "value": "lin_api_..."}'
+    ```
+    Secret names must be lowercase and unique per org. The plaintext is
+    encrypted at rest by the configured backend (`local` Fernet by default).
+  </Step>
+  <Step title="Reference it in the MCP config">
+    ```json
+    "env": { "LINEAR_API_KEY": "${secret:linear}" }
+    ```
+    At run time, brenlabs resolves the reference, fetches the plaintext, and
+    injects it as a sandbox environment variable. The MCP server subprocess
+    inherits it. No plaintext lands in the snapshot, event log, or
+    `.mcp.json`.
+  </Step>
+  <Step title="Watch for the resolution">
+    `secrets.last_used_at` updates lazily after the first successful
+    resolution per run, so you can audit which secrets actually got used.
+  </Step>
+</Steps>
+
+## HTTP MCP example — Linear
+
+```json
+{
+  "name": "linear",
+  "transport": "http",
+  "url": "https://mcp.linear.app/mcp",
+  "env": { "LINEAR_API_KEY": "${secret:linear}" }
+}
+```
+
+## HTTP MCP example — Mintlify
+
+```json
+{
+  "name": "mintlify",
+  "transport": "http",
+  "url": "https://mintlify.com/docs/mcp"
+}
+```
+
+No env needed — Mintlify's MCP is unauthenticated.
+
+## stdio MCP example
+
+```json
+{
+  "name": "chrome-devtools",
+  "transport": "stdio",
+  "command": "npx",
+  "args": ["chrome-devtools-mcp@latest"],
+  "env": {}
+}
+```
+
+The base sandbox image includes Node and Python. If your MCP needs a binary
+not in the image, file an issue — we can add it to the `claude-code` or
+`claude-code-browser` image.
+
+## Browser MCPs
+
+MCPs that need a real browser (Playwright-based, like `chrome-devtools-mcp`)
+should run on the `claude-code-browser` agent type rather than the default
+`claude-code` type. brenlabs picks the image automatically when any of the
+configured MCPs declares a Playwright dependency, but you can also force it
+via the agent's `agent_type` field.
+
+## Inspecting what the agent saw
+
+In a run's `events.jsonl`, the very first event is `system.init`. Look at
+its `mcp_servers` and `tools` arrays:
+
+- `mcp_servers` lists every MCP the CLI registered. Connection failures
+  appear here.
+- `tools` lists every tool the agent can call. MCP tools appear with the
+  `mcp__<server>__<tool>` prefix.
+
+If your MCP server doesn't show up in either array, the most common causes
+are:
+
+| Cause | Fix |
+|---|---|
+| Wrong transport for the URL | `mcp.linear.app/mcp` is HTTP, not SSE. |
+| Authentication failed | Check the secret value, not just its name. |
+| stdio command not found | Use the absolute path or bundle the binary into the image. |
+| Server rate-limited the auth probe | Brief retry usually clears it; check Linear/Sentry status. |

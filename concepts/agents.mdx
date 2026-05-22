@@ -1,0 +1,60 @@
+---
+title: "Agents"
+description: "The configuration under test — model, skills, MCPs, system prompt."
+icon: "robot"
+---
+
+An **agent** in brenlabs is a reusable bundle of configuration for an
+underlying coding tool. It pairs an [agent type](#agent-types) (the tool
+itself — Claude Code, Codex) with the model, skills, MCP servers, and system
+prompt that should be active for any [run](/concepts/runs) using it.
+
+Agents are reusable across [scenarios](/concepts/scenarios). The same agent
+can be tested against many tasks; the same scenario can be run against many
+agents. That's where the evaluation value comes from — comparing how a
+configuration change affects outcomes across a fixed set of scenarios.
+
+## Agent types
+
+The agent type selects the base sandbox image and the CLI invocation pattern.
+Each type has its own supported model list.
+
+| Agent type | Supported models | Notes |
+|---|---|---|
+| `claude-code` | `claude-haiku-4-5`, `claude-sonnet-4-6`, `claude-opus-4-7` | Runs `claude` CLI in headless stream mode. |
+| `claude-code-browser` | same as above | Adds Playwright + Chromium for browser MCP. |
+| `codex` | (forthcoming) | Coming. |
+
+## Key fields
+
+| Field | Description |
+|---|---|
+| `id` | Prefixed `ag_`. |
+| `name` | Display name. |
+| `slug` | URL-safe, unique per org. |
+| `agent_type` | One of the types above. |
+| `model` | Specific model id within the type's supported set. |
+| `system_prompt` | Optional preamble written as `CLAUDE.md` in the sandbox. |
+| `skills` | Pinned `[{skill_id, version}, …]` — see [Skills](/concepts/skills). |
+| `plugins` | Pinned `[{plugin_id, version}, …]` — Git-imported plugin bundles, see [Plugins](/concepts/plugins). |
+| `mcps` | Inline list of MCP server configs — see [Wiring MCPs](/guides/wiring-mcps). |
+| `secret_ids` | Org-scoped `sec_*` ids to fetch and inject as env vars at run time. |
+| `allowed_tools` / `disallowed_tools` | Tool-name allowlist or denylist passed to the CLI. |
+| `permission_mode` | Defaults to `bypassPermissions` so the agent can act without per-tool prompts. |
+
+## Why skills and plugins are pinned by version
+
+When you reference a [skill](/concepts/skills) or [plugin](/concepts/plugins)
+on an agent, the reference is `(id, version)`, not just `id`. Both can
+evolve over time; old versions remain reachable from agents that pinned
+them. This makes runs reproducible: a year-old agent configured against
+v1 of a skill still gets v1 even if v3 exists today. Same for plugins —
+the snapshot at that commit SHA stays pinned forever.
+
+## Snapshotting
+
+When a run starts, brenlabs **freezes** the agent's full resolved
+configuration into the run's `snapshot` column — agent fields, skill bodies,
+MCP configs, image tag, scenario text. Subsequent edits to the agent don't
+affect that run's replay. This is how brenlabs guarantees that two runs of
+"the same agent against the same scenario a week apart" actually are.

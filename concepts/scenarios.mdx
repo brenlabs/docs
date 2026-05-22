@@ -1,0 +1,67 @@
+---
+title: "Scenarios"
+description: "The task description and hidden success criteria."
+icon: "list-check"
+---
+
+A **scenario** describes the work the agent should do. It has two parts that
+play very different roles:
+
+- **`description_template`** — what the agent sees, rendered into `scenario.md`
+  inside the sandbox and piped to the agent as the user message.
+- **`success_criteria`** — what only the judge sees. Never leaks into the
+  sandbox; only used at evaluation time to decide pass or fail.
+
+This split is deliberate. If criteria leaked to the agent, the agent could
+trivially pass by parroting them back. brenlabs enforces the boundary at the
+ORM layer — scenario lookups going to the runner exclude the criteria
+column.
+
+## Key fields
+
+| Field | Description |
+|---|---|
+| `id` | Prefixed `scen_`. |
+| `name` | Display name. |
+| `slug` | URL-safe, unique per org. |
+| `description_template` | The user-visible task. Supports `{{input}}` placeholders. |
+| `inputs` | JSON dict of values substituted into the template at run time. |
+| `success_criteria` | Plain prose. Judge reads this verbatim. |
+| `current_version` | Latest version number; older versions remain accessible. |
+
+## Versioning
+
+Scenarios use the same header + `scenario_versions` pattern as
+[skills](/concepts/skills). A `PATCH` that changes `description_template`,
+`inputs`, or `success_criteria` bumps the version. Pure metadata edits
+(name, slug) leave history alone. Runs always snapshot the exact rendered
+text into their row, so a scenario edit cannot retroactively change a
+completed run's behaviour.
+
+## Writing good criteria
+
+The judge uses these criteria to grade the run, so they need to be specific
+enough to be falsifiable. "The agent did a good job" is bad. "The agent's
+final message contained a valid SQL `INSERT` statement matching the schema
+in the scenario prompt" is good.
+
+A few patterns that work:
+
+- Lead with the **observable outcome**, not the intent: *"`/tmp/result.json`
+  exists and is valid JSON"* rather than *"the agent should produce
+  output"*.
+- Enumerate the criteria you actually care about — the judge produces a
+  per-criterion verdict, so finer-grained criteria give finer-grained
+  feedback. Three to seven discrete points is the sweet spot.
+- Specify **negatives** when they matter — *"the agent did not call the
+  `delete_*` endpoints"*. Otherwise the judge often gives the benefit of the
+  doubt.
+- Avoid leaking implementation tips — criteria are not the place to
+  *help* the agent.
+
+## Snapshot on run
+
+When a run starts, the resolved scenario text (template + substituted
+inputs) is frozen into the run row. The criteria stay server-side until the
+judge phase. This means you can edit a scenario tomorrow without invalidating
+yesterday's runs.

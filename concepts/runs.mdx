@@ -1,0 +1,120 @@
+---
+title: "Runs"
+description: "One execution of an agent against a scenario, with a judge verdict."
+icon: "play"
+---
+
+A **run** is one execution of an [agent](/concepts/agents) against a
+[scenario](/concepts/scenarios), targeting a [product](/concepts/products).
+It's the unit of evaluation in brenlabs — every transcript, every verdict,
+every artefact is scoped to a run.
+
+Runs are immutable once they reach a terminal state. The full event log and
+the structured analysis are archived to object storage so the run is fully
+replayable.
+
+## Lifecycle
+
+A run transitions through these states in order:
+
+<Steps>
+  <Step title="queued">
+    The run row exists. No sandbox yet. Cancellable.
+  </Step>
+  <Step title="preparing">
+    Substates exposed via `preparing_phase`:
+    - **`resolving`** — load agent, scenario, skills from DB; freeze snapshot
+    - **`pulling`** — create the Modal sandbox from the base image
+    - **`materializing`** — write `CLAUDE.md`, skills plugin, MCP config, scenario.md
+  </Step>
+  <Step title="running">
+    Agent CLI is executing in the sandbox. Tool calls, thinking, and text
+    stream live via SSE.
+  </Step>
+  <Step title="evaluating">
+    Judge model reviews the full transcript against the hidden success
+    criteria.
+  </Step>
+  <Step title="terminal">
+    One of: `succeeded`, `failed`, `errored`, `timed_out`, `cancelled`.
+  </Step>
+</Steps>
+
+## Terminal states
+
+| State | Means |
+|---|---|
+| `succeeded` | Judge passed all (or enough) success criteria. |
+| `failed` | Judge ran but verdict was negative. |
+| `errored` | Infra/auth/model failure — judge never ran. Reason in `state_reason`. |
+| `timed_out` | Sandbox exceeded its time budget. |
+| `cancelled` | User cancelled before terminal. |
+
+## Key fields
+
+| Field | Description |
+|---|---|
+| `id` | Prefixed `run_`. |
+| `product_id`, `agent_id`, `scenario_id` | The three inputs that bound the run. |
+| `product_environment_id` | Optional — picks a specific environment's creds. |
+| `state`, `preparing_phase` | Current lifecycle position. |
+| `state_reason` | Human-readable failure message when applicable. |
+| `judge_verdict` | Full structured verdict (criteria, flags, thinking observations). |
+| `judge_passed`, `judge_confidence` | Promoted scalars for analytics queries. |
+| `snapshot` | Frozen agent + scenario config at resolve time. Drives replay. |
+| `modal_sandbox_id` | For debugging — the Modal sandbox the run executed in. |
+| `s3_prefix` | Where `events.jsonl` and `analysis.json` live. |
+| `started_at`, `completed_at` | Wall-clock bounds of the run. |
+
+## Streaming
+
+While a run is active, subscribe to the SSE channel:
+
+```
+GET /v1/runs/{run_id}/stream
+```
+
+Events delivered are **normalised UI events** — `agent.start`, `tool.bash`,
+`agent.think`, `judge.verdict`, etc. The raw stream-json from the CLI is
+archived to `events.jsonl` in object storage; the SSE channel is a friendly
+view of it for live tailing.
+
+If you connect after the run completes, the stream endpoint replays
+`events.jsonl` from object storage and closes with a `run.done` event.
+
+## Judge verdict shape
+
+The verdict is a structured object:
+
+```json
+{
+  "passed": false,
+  "confidence": 0.72,
+  "reason": "Agent submitted partial output missing the required signature line.",
+  "criteria_analysis": [
+    { "criterion": "...", "status": "met", "evidence": "Turn 3 [Tool] shows ..." },
+    { "criterion": "...", "status": "missed", "evidence": "no evidence found" }
+  ],
+  "thinking_observations": [
+    { "turn": 2, "type": "wrong_assumption", "observation": "..." }
+  ],
+  "flags": [
+    { "severity": "critical", "category": "incomplete_output", "description": "..." }
+  ],
+  "tool_usage": { "tools_used": ["Bash", "Read"], "total_calls": 6, "failed_calls": 1 }
+}
+```
+
+Read `judge_verdict` for the full object, or query the promoted scalars
+(`judge_passed`, `judge_confidence`) for fleet analytics.
+
+## Snapshot guarantees replay
+
+The `snapshot` JSONB column on a run row captures the fully resolved agent
+config (including skill bodies, MCP configs, image tag) and the rendered
+scenario text. This means:
+
+- Editing an agent or scenario doesn't retroactively change past runs.
+- A run from a year ago is replayable byte-for-byte if you re-run with the
+  same snapshot.
+- Two "identical" runs a week apart are guaranteed to be identical inputs.

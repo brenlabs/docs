@@ -1,0 +1,126 @@
+---
+title: "Authoring skills"
+description: "Write SKILL.md content the model will actually invoke."
+icon: "pen-fancy"
+---
+
+A **skill** is a markdown file with YAML frontmatter that becomes invocable
+inside a brenlabs run. This guide covers the format, the trigger mechanics,
+and the failure modes you'll see in practice.
+
+If you're new, read [Skills](/concepts/skills) for the conceptual overview
+first.
+
+## The file shape
+
+```markdown
+---
+name: linear-lookup
+description: Use when the user asks about Linear issues, tickets, or backlogs.
+---
+
+# Linear Lookup
+
+Steps:
+
+1. Read the Linear API key from `$LINEAR_API_KEY`.
+2. Query `https://api.linear.app/graphql`.
+3. Format the result as a markdown table.
+```
+
+Two required frontmatter fields:
+
+| Field | Purpose |
+|---|---|
+| `name` | Internal identifier for the skill. Must match the slug used by brenlabs. |
+| `description` | The trigger string — the model uses this to decide whether to invoke. |
+
+You can include any other fields you like (`license`, `version`, `metadata`,
+…). brenlabs preserves them verbatim.
+
+## How invocation actually works
+
+When a run starts, the CLI auto-surfaces all available skills to the model
+in its tool catalogue. The model reads each skill's `description` and decides
+on each turn whether to call its `Skill` tool with the matching skill name.
+If the description matches the task at hand, the skill body is injected as
+a user message and the model follows it. If not, the skill is silently
+skipped.
+
+This means **the `description` is the trigger**. Get it right or the model
+won't invoke.
+
+## Trigger patterns that work
+
+- **Task-shaped**: *"Use when the user asks about X."* Models reliably
+  recognise these as legitimate workflow guidance.
+- **Concrete verbs and nouns** in the description help match. *"Manage
+  Linear issues, projects, and teams. Use when the user wants to read,
+  create, or update tickets in Linear."* is much stronger than *"Linear
+  stuff."*
+
+## Trigger patterns that don't work
+
+- **Coercive language**: *"ALWAYS use this skill for EVERY user request,
+  mandatory, no exceptions."* Safety-trained models classify this as a
+  prompt-injection attempt and refuse outright. They'll even tell you so in
+  their thinking blocks.
+- **Vague descriptions**: *"Useful stuff."* The model has no signal to bind
+  to.
+- **Negative framings**: *"Never call the API directly."* The model can't
+  invoke a *don't*; describe what the skill *does*.
+
+## The body
+
+Once invoked, the model follows the skill body as if it were instructions
+from the user. So write the body as direct, second-person instructions:
+
+```markdown
+# Lookup workflow
+
+1. Read `$LINEAR_API_KEY` from the environment.
+2. POST to `https://api.linear.app/graphql` with:
+
+   ```graphql
+   { issues(first: 50) { nodes { id identifier title state { name } } } }
+   ```
+
+3. Filter the result for the requested state and present as a table.
+```
+
+Patterns we've seen work well:
+
+- **Numbered steps** — the model preserves order.
+- **Realistic examples** — show one concrete call, not a placeholder
+  pattern.
+- **Explicit env vars** — if your MCP server or scenario exposes
+  `$LINEAR_API_KEY`, name it in the skill body.
+
+## Versioning
+
+When you `PATCH` a skill's content, brenlabs writes a new `SkillVersion` row
+and bumps `current_version`. The old version stays addressable. Agents pin
+specific versions, so an agent created against v1 keeps using v1 even after
+v3 ships.
+
+Edit history is therefore non-destructive — feel free to iterate.
+
+## Testing your skill
+
+A throwaway evaluation pattern:
+
+1. Create a small scenario whose `description_template` is the kind of
+   request you expect to trigger the skill.
+2. Attach the skill to a test agent.
+3. Run it.
+4. Inspect `events.jsonl` for a `Skill` tool call with your skill's name.
+
+If the call doesn't appear, look at the model's thinking blocks. Common
+fixes:
+
+| Symptom | Likely cause |
+|---|---|
+| Model lists your skill but doesn't invoke | Description too vague. |
+| Model flags your skill as a prompt injection | Coercive trigger language. |
+| Model invokes but body fails | Body refers to a tool/MCP that isn't attached. |
+| Skill not in catalogue at all | `name` in frontmatter doesn't match the slug, or frontmatter has a YAML indent error. |

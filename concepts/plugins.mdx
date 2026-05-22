@@ -1,0 +1,117 @@
+---
+title: "Plugins"
+description: "Git-imported Claude Code plugin bundles, pinned by commit SHA."
+icon: "puzzle-piece"
+---
+
+A **plugin** in brenlabs is a snapshot of a public GitHub repo that follows
+the [Claude Code plugin layout](https://mintlify.com/docs) — a
+`.claude-plugin/marketplace.json` manifest declaring one or more inner
+plugins, each with its own skills, commands, and agents.
+
+Plugins are how you bring **upstream** content into brenlabs: somebody
+else's published skill bundle, an internal repo your team maintains
+separately, or a fork of an open-source bundle you want to experiment with.
+
+For markdown content you author **inside brenlabs**, see
+[Skills](/concepts/skills) instead — that's the lighter-weight path.
+
+## How plugins differ from skills
+
+| | Skills | Plugins |
+|---|---|---|
+| Authored where | brenlabs UI / API | External Git repo |
+| Content lives in | brenlabs DB | S3 tarball snapshot |
+| Versioning | `current_version` int, edit-in-place | Commit-SHA pin, immutable |
+| Update flow | `PATCH /v1/skills/{id}` with new content | `POST /v1/plugins/{id}/versions` to refetch upstream |
+| Inside the sandbox | Synthetic plugin at `/home/worker/.claude/plugins/bren/` | Each bundle extracted at `/home/worker/.claude/bundles/<slug>/` |
+| Use when | You want to author and iterate inside brenlabs | You want to pull in upstream content with reproducible pinning |
+
+Both end up surfacing skills to the agent through Claude Code's plugin
+loader — the difference is purely the authoring path.
+
+## Key fields
+
+| Field | Description |
+|---|---|
+| `id` | Prefixed `plg_`. |
+| `slug` | URL-safe, unique per org. |
+| `name` | Display name (defaults to upstream `marketplace.json:owner.name`). |
+| `description` | Free-form. |
+| `repo_url` | Source GitHub repo URL. |
+| `git_ref` | Branch, tag, or SHA we resolved against. Defaults to `main`. |
+| `commit_sha` | The pinned commit SHA — this is the immutable bit. |
+| `manifest` | Parsed `.claude-plugin/marketplace.json` from the snapshot. |
+| `contents_summary` | Counts: `skills`, `agents`, `commands`, `hooks`. |
+| `tarball_size_bytes` | Snapshot size, useful for cost forecasting. |
+| `current_version` | Latest version row; agents pin specific ones. |
+
+## What gets fetched
+
+When you register a plugin, brenlabs:
+
+<Steps>
+  <Step title="Resolve the ref">
+    Look up the commit SHA for the supplied `git_ref` on GitHub's API.
+    Public repos only in v1; private repos with PAT support land later.
+  </Step>
+  <Step title="Download the tarball">
+    Fetch `https://github.com/<owner>/<repo>/tarball/<sha>` via streaming
+    HTTP. No `git clone` — keeps the API image slim.
+  </Step>
+  <Step title="Parse the manifest">
+    Read `.claude-plugin/marketplace.json` from the tarball. Each entry in
+    `plugins[].source` becomes a sandbox `--plugin-dir` arg at run time.
+  </Step>
+  <Step title="Stash + index">
+    Upload the tarball bytes to S3, write the parsed manifest +
+    contents-summary into the DB row.
+  </Step>
+</Steps>
+
+## Pinning and refresh
+
+Agents reference plugins by `(plugin_id, version)`, just like skills.
+A "version" here is a frozen snapshot at a specific upstream commit.
+
+To pick up new upstream content:
+
+```bash
+curl -X POST https://api.bren.run/v1/plugins/plg_.../versions \
+  -H "Authorization: Bearer $BREN_JWT" -H "X-Org-Id: $BREN_ORG" \
+  -H "Content-Type: application/json" \
+  -d '{"git_ref": "main"}'
+```
+
+If `main` hasn't moved since the last refresh (same resolved commit SHA),
+the call is a no-op — you get back the existing version row without bumping
+`current_version`. Brenlabs gives you idempotent refreshes for free.
+
+To upgrade agents to the new version, `PATCH` their `plugins[]` array with
+the new `(plugin_id, version)`. Old versions stay reachable — past runs
+remain replayable.
+
+## Soft delete
+
+Plugin headers soft-delete. Deletion is blocked when any non-deleted agent
+still references the plugin. Repoint or detach the references first.
+
+## What it looks like inside the sandbox
+
+```
+/home/worker/.claude/bundles/
+  cekura-skills/
+    .claude-plugin/
+      marketplace.json
+    plugins/
+      analytics/
+        skills/
+          analytics-runbook/
+            SKILL.md
+      observability/
+        ...
+```
+
+For each declared plugin in `marketplace.json:plugins[]`, the runner passes
+one `--plugin-dir <path>` argument to `claude`. The CLI loads each as its
+own namespaced plugin, exactly as it would on a developer's laptop.

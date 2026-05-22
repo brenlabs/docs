@@ -1,133 +1,75 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "What is brenlabs?"
+description: "Test AI coding agents against your product in sandboxed environments, with structured verdicts."
+icon: "compass"
 ---
 
-## Setting up
+brenlabs is an evaluation platform for AI coding agents. You bring a product
+to test against, an agent configuration (Claude Code, Codex, …), and a
+scenario describing the work the agent should do. brenlabs spins up an
+isolated sandbox, runs the agent against the scenario, streams the full
+turn-by-turn transcript, and judges the result against the success criteria
+you authored.
 
-Get your documentation site up and running in minutes.
+It exists because coding agents behave differently depending on which skills,
+MCP servers, and system prompts they're configured with — and the only way
+to find out which combination actually works is to run them.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
+## Who this is for
 
-## Make it yours
+- Teams building **products that AI agents will use** — APIs, SDKs, internal
+  tools — and want to know whether agents can actually accomplish real tasks
+  against them.
+- Teams **authoring agent configurations** — skills, MCP servers, system
+  prompts — who need a way to A/B test changes before shipping them.
+- Engineers debugging **why an agent did the wrong thing** in production —
+  brenlabs preserves the full transcript, every tool call, every thinking
+  block, and the judge's per-criterion analysis.
 
-Design a docs site that looks great and empowers your users.
+## How it works
+
+<Steps>
+  <Step title="Describe what you're testing">
+    Register the product (URL + auth), define one or more environments
+    (staging, prod, etc.), and configure an agent with the skills and MCP
+    servers it should have access to.
+  </Step>
+  <Step title="Write a scenario">
+    A short markdown brief telling the agent what to do, plus a success
+    criteria block that's hidden from the agent and shown only to the judge.
+  </Step>
+  <Step title="Run it">
+    brenlabs creates a Modal sandbox from the right base image, materialises
+    the scenario, skills, and MCP config, then executes the agent. The full
+    transcript streams to your browser in real time.
+  </Step>
+  <Step title="Read the verdict">
+    A separate judge model reviews the transcript against the criteria,
+    producing a structured verdict — pass/fail, confidence, per-criterion
+    breakdown, severity-sorted flags.
+  </Step>
+</Steps>
+
+## Start here
 
 <Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Sign up, create your first agent, run a scenario from the command line.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Concepts" icon="diagram-project" href="/concepts/products">
+    The five entities — products, agents, scenarios, skills, runs — and how
+    they fit together.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Authoring skills" icon="pen-fancy" href="/guides/authoring-skills">
+    SKILL.md format, frontmatter, and when the model actually invokes them.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Wiring MCPs" icon="plug" href="/guides/wiring-mcps">
+    Attach Linear, Mintlify, or any HTTP/stdio MCP server to an agent.
   </Card>
 </Columns>
 
-## Create beautiful pages
+## API access
 
-Everything you need to create world-class documentation.
-
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
-
-## Make your content agent ready
-
-Make your docs work for humans and AI agents alike.
-
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
-
-## Need inspiration?
-
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+brenlabs exposes everything through a REST API at `https://api.bren.run`.
+Anything you can do in the dashboard, you can script. See the
+[API reference](/api-reference/openapi) for the full catalogue.

@@ -1,0 +1,129 @@
+---
+title: "Installing plugins"
+description: "Import a Claude Code plugin bundle from a GitHub repo."
+icon: "download"
+---
+
+This guide walks through registering a plugin, refreshing it later, and
+attaching it to an [agent](/concepts/agents). For the conceptual model
+(plugins vs. skills, pinning, …) read [Plugins](/concepts/plugins) first.
+
+## Prerequisites
+
+- A GitHub repo with a valid `.claude-plugin/marketplace.json` manifest.
+- The repo must be **public** in v1 — private-repo support arrives later.
+- Your brenlabs session JWT in `$BREN_JWT` and your org id in `$BREN_ORG`.
+
+## 1. Register the plugin
+
+```bash
+curl -sS -X POST https://api.bren.run/v1/plugins \
+  -H "Authorization: Bearer $BREN_JWT" \
+  -H "X-Org-Id: $BREN_ORG" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "repo_url": "https://github.com/cekura-ai/cekura-skills",
+    "git_ref":  "main"
+  }' | jq '{id, slug, commit_sha, contents_summary}'
+```
+
+Sample response:
+
+```json
+{
+  "id": "plg_a1b2c3d4",
+  "slug": "cekura-skills",
+  "commit_sha": "e4c530640f...",
+  "contents_summary": { "skills": 7, "commands": 0, "agents": 0, "hooks": 0 }
+}
+```
+
+What brenlabs did:
+
+1. Resolved `main` → a concrete commit SHA on GitHub's API.
+2. Downloaded the tarball at that SHA.
+3. Extracted `.claude-plugin/marketplace.json`, parsed it, counted contents.
+4. Uploaded the tarball to S3 and wrote the DB row.
+
+Save the `plg_…` id.
+
+## 2. Attach to an agent
+
+Patch the agent's `plugins` array. As with skills, references pin a specific
+`(plugin_id, version)` so future agent runs are reproducible against this
+exact snapshot.
+
+```bash
+curl -sS -X PATCH https://api.bren.run/v1/agents/ag_... \
+  -H "Authorization: Bearer $BREN_JWT" \
+  -H "X-Org-Id: $BREN_ORG" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "plugins": [
+      { "plugin_id": "plg_a1b2c3d4", "version": 1 }
+    ]
+  }'
+```
+
+You can mix plugins, [skills](/concepts/skills), and [MCP servers](/guides/wiring-mcps)
+on the same agent. They reach the model through different mechanisms but
+compose cleanly.
+
+## 3. Refresh from upstream
+
+When the upstream repo gains new content:
+
+```bash
+curl -sS -X POST https://api.bren.run/v1/plugins/plg_a1b2c3d4/versions \
+  -H "Authorization: Bearer $BREN_JWT" \
+  -H "X-Org-Id: $BREN_ORG" \
+  -H "Content-Type: application/json" \
+  -d '{ "git_ref": "main" }' | jq '.commit_sha, .current_version'
+```
+
+The call resolves `main` to a fresh commit SHA. If it matches the existing
+pinned SHA (upstream hasn't moved), the call is a no-op — `current_version`
+stays put. Otherwise a new version row is written and `current_version`
+bumps.
+
+Old versions remain addressable. Agents pinned to the previous version
+continue to use it — refresh is non-destructive.
+
+To roll an agent forward to the new version, `PATCH` its `plugins[]` entry
+with the new version number.
+
+## 4. Inspect inside a run
+
+After a run completes, look at its `system.init` event. Each declared
+plugin from `marketplace.json:plugins[]` shows up as a separate namespaced
+entry in the `slash_commands` and `skills` arrays — for example:
+
+```json
+{
+  "slash_commands": [
+    "cekura-skills:analytics-runbook",
+    "cekura-skills:observability-runbook",
+    "bren:duck-mode",
+    "update-config", "debug", ...
+  ]
+}
+```
+
+The `bren:` prefix is brenlabs's [synthetic skills plugin](/concepts/skills);
+plugin entries get prefixed by their bundle slug.
+
+## Common errors
+
+| Error | Cause |
+|---|---|
+| `plugin_repo_not_found` | The repo URL is wrong, private, or 404s on GitHub. |
+| `manifest_missing` | The repo has no `.claude-plugin/marketplace.json`. |
+| `manifest_invalid_json` | Manifest exists but is malformed. |
+| `plugin_slug_taken` | Another plugin in your org already uses this slug. Pass `slug` explicitly. |
+| `tarball_too_large` | Snapshots above the per-plugin size limit are rejected. Trim the repo. |
+
+## Tarball storage cost
+
+Each plugin version stores one tarball in S3-compatible storage. The
+response includes `tarball_size_bytes` so you can budget. Versions are
+immutable — refreshing doesn't replace, it appends.

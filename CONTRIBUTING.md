@@ -1,8 +1,8 @@
-> **Customize this file**: Tailor this template to your project by noting specific contribution types you're looking for, adding a Code of Conduct, or adjusting the writing guidelines to match your style.
+# Contributing to brenlabs docs
 
-# Contribute to the documentation
-
-Thank you for your interest in contributing to our documentation! This guide will help you get started.
+Thanks for helping make the brenlabs docs better. This site is built with
+[Mintlify](https://mintlify.com) and deploys automatically on push to
+`main`.
 
 ## How to contribute
 
@@ -22,13 +22,19 @@ Thank you for your interest in contributing to our documentation! This guide wil
 6. Preview your changes at `http://localhost:3000`
 7. Commit your changes and submit a pull request
 
-For more details on local development, see our [development guide](development.mdx).
+For more details on local development, see the README in this repo.
 
 ## Writing guidelines
 
-- **Use active voice**: "Run the command" not "The command should be run"
-- **Address the reader directly**: Use "you" instead of "the user"
-- **Keep sentences concise**: Aim for one idea per sentence
-- **Lead with the goal**: Start instructions with what the user wants to accomplish
-- **Use consistent terminology**: Don't alternate between synonyms for the same concept
-- **Include examples**: Show, don't just tell
+`AGENTS.md` in this repo defines the canonical terminology (e.g. agent vs.
+agent type, plugin vs. MCP server) and the house style. Read it before
+making content changes.
+
+In short:
+
+- Active voice, second person ("you")
+- Sentence case for headings
+- One idea per sentence
+- Code formatting for paths, commands, and identifiers
+- No marketing language ("powerful", "seamless")
+- No filler ("it's important to note")

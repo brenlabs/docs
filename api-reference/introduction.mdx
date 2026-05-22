@@ -1,33 +1,73 @@
 ---
-title: 'Introduction'
-description: 'Example section for showcasing API endpoints'
+title: "API reference"
+description: "Everything you can do in the brenlabs dashboard, scriptable through the REST API."
 ---
 
-<Note>
-  If you're not looking to build API reference documentation, you can delete
-  this section by removing the api-reference folder.
-</Note>
+The full reference is auto-generated from the running API's OpenAPI export.
+Each endpoint gets its own page in the sidebar with request/response schemas
+and a try-it-now playground.
 
-## Welcome
+## Base URL
 
-There are two ways to build API documentation: [OpenAPI](https://mintlify.com/docs/api-playground/openapi/setup) and [MDX components](https://mintlify.com/docs/api-playground/mdx/configuration). For the starter kit, we are using the following OpenAPI specification.
-
-<Card
-  title="Plant Store Endpoints"
-  icon="leaf"
-  href="https://github.com/mintlify/starter/blob/main/api-reference/openapi.json"
->
-  View the OpenAPI specification file
-</Card>
+| Environment | URL |
+|---|---|
+| Production | `https://api.bren.run` |
+| Local dev | `http://localhost:8000` |
 
 ## Authentication
 
-All API endpoints are authenticated using Bearer tokens and picked up from the specification file.
+Every request needs two headers:
+
+| Header | Value |
+|---|---|
+| `Authorization` | `Bearer <jwt>` for user sessions, or `Bearer brn_live_…` for API tokens |
+| `X-Org-Id` | The org id the request is scoped to |
+
+User sessions come from the dashboard at [bren.run](https://bren.run).
+API tokens can be created at **Settings → API tokens** for headless
+automation.
+
+Some endpoints (secrets management, org owner actions) require a user
+session — API tokens get `403 tokens_cannot_*` on those. The endpoint
+description in each page notes the constraint where it applies.
+
+## Error shape
+
+All errors follow the same JSON shape:
 
 ```json
-"security": [
-  {
-    "bearerAuth": []
-  }
-]
+{
+  "error": "skill_not_found",
+  "message": "no such skill",
+  "details": { "skill_id": "skill_xxx" }
+}
+```
+
+`error` is a stable, machine-readable code. `message` is human-friendly.
+`details` carries structured context where useful.
+
+## Idempotency
+
+Mutating endpoints accept an `Idempotency-Key` header. Replays within 24
+hours return the original response without re-executing.
+
+## Cursor-based pagination
+
+List endpoints return:
+
+```json
+{ "items": [...], "next_cursor": "..." }
+```
+
+When `next_cursor` is non-null, pass it as `?cursor=<value>` on the next
+request. When it's null, you've reached the end.
+
+## Snapshot freshness
+
+This reference is generated from a snapshot of the OpenAPI spec stored
+alongside the docs. Refresh with:
+
+```bash
+curl -sS https://api.bren.run/openapi.json > api-reference/openapi.json
+git commit -am "chore(docs): refresh openapi snapshot"
 ```

@@ -36,7 +36,8 @@
             "pages": [
               "guides/authoring-skills",
               "guides/installing-plugins",
-              "guides/wiring-mcps"
+              "guides/wiring-mcps",
+              "guides/connecting-to-brenlabs-mcp"
             ]
           }
         ]

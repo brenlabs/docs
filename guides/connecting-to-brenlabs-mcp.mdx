@@ -1,0 +1,132 @@
+---
+title: "Connecting to the brenlabs MCP"
+description: "Drive brenlabs from Claude — list and create products, agents, and scenarios, start runs, and debug verdicts as MCP tools."
+icon: "share-nodes"
+---
+
+brenlabs exposes its own [Model Context Protocol](https://modelcontextprotocol.io)
+server so you can drive your org from any MCP client — Claude Code, the Claude
+desktop/web app, or your own agent. It speaks **streamable HTTP** and wraps the
+same surface as the REST API: list and fetch products / agents / scenarios /
+runs, create and edit them, start and replay runs, and pull a run's judge
+verdict and debug artifacts.
+
+<Note>
+This is the inverse of [Wiring MCP servers](/guides/wiring-mcps). That guide
+attaches an external MCP **to an agent under test**. This one connects **a
+client to brenlabs itself** so you can manage your org conversationally.
+</Note>
+
+## Endpoint
+
+| | |
+|---|---|
+| **URL** | `https://api.bren.run/mcp` |
+| **Transport** | Streamable HTTP (stateless) |
+| **Auth** | `Authorization: Bearer <token>` header |
+
+## Authentication
+
+The MCP endpoint accepts exactly the credentials the REST API does — there's no
+separate login.
+
+<CardGroup cols={2}>
+  <Card title="API token (recommended)" icon="key">
+    A `brn_live_…` token carries its own org. Send it as the bearer and you're
+    done — no `X-Org-Id` needed.
+  </Card>
+  <Card title="JWT session" icon="user">
+    A user JWT works too, but you must also send `X-Org-Id` naming the org to
+    act in (a JWT can belong to several orgs).
+  </Card>
+</CardGroup>
+
+A missing or invalid bearer returns `401` with a `WWW-Authenticate: Bearer`
+header. Create an API token from your dashboard or via
+[`POST /v1/api-tokens`](/api-reference/introduction).
+
+## Connect from Claude Code
+
+```bash
+claude mcp add --transport http bren https://api.bren.run/mcp \
+  --header "Authorization: Bearer brn_live_your_token_here"
+```
+
+Then ask Claude things like *"list my brenlabs scenarios"* or *"start a run of
+the checkout agent against the signup scenario and tell me the verdict."*
+
+## Connect from the Claude app
+
+Add it as a custom connector under **Settings → Connectors → Add custom
+connector**:
+
+<Steps>
+  <Step title="URL">
+    `https://api.bren.run/mcp`
+  </Step>
+  <Step title="Auth header">
+    Set `Authorization` to `Bearer brn_live_…`. (JWT callers also add
+    `X-Org-Id`.)
+  </Step>
+  <Step title="Save and enable">
+    The `bren_*` tools appear in the tool list. Write tools prompt for
+    confirmation on first use; destructive ones (update / delete / cancel) show
+    the heavier confirmation.
+  </Step>
+</Steps>
+
+## Tool catalogue
+
+Tools split into three tiers, reflected in their MCP annotations so the client
+can gate them correctly:
+
+<AccordionGroup>
+  <Accordion title="Read (read-only — may auto-approve)" icon="eye">
+    | Tool | Purpose |
+    |---|---|
+    | `bren_list_products` / `bren_get_product` | Products in the org |
+    | `bren_list_agents` / `bren_get_agent` | Agents (configs under test) |
+    | `bren_list_scenarios` / `bren_get_scenario` | Scenarios + current version |
+    | `bren_list_scenario_versions` / `bren_get_scenario_version` | Scenario version history |
+    | `bren_list_environments` / `bren_get_environment` | Target environments under a product |
+    | `bren_list_runs` / `bren_get_run` | Runs, newest first; single run + judge verdict |
+    | `bren_get_run_events` / `bren_get_run_logs` / `bren_get_run_analysis` | A run's transcript, stderr, and structured judge analysis |
+
+    List tools page by a `limit` (default 50, max 100). The run-artifact tools
+    cap their payload — events return the most recent `limit` (≤200) with a
+    total count; logs return the trailing ~50k characters — so a long run
+    stays under the client's result-size limit.
+  </Accordion>
+  <Accordion title="Write — additive (consent on first use)" icon="plus">
+    | Tool | Purpose |
+    |---|---|
+    | `bren_create_product` / `bren_create_agent` / `bren_create_scenario` / `bren_create_environment` | Create resources |
+    | `bren_duplicate_agent` | Clone an agent |
+    | `bren_start_run` | Queue a run for an (agent, scenario) pair |
+    | `bren_replay_run` | Re-execute a terminal run with re-resolved settings |
+    | `bren_rejudge_run` | Re-run the judge on an existing transcript |
+    | `bren_apply_fix` | Apply a `suggested_fix` from a verdict flag |
+  </Accordion>
+  <Accordion title="Destructive (heavier confirmation)" icon="triangle-exclamation">
+    | Tool | Purpose |
+    |---|---|
+    | `bren_update_product` / `bren_update_agent` / `bren_update_scenario` / `bren_update_environment` | Edit existing resources (partial update) |
+    | `bren_delete_product` / `bren_delete_agent` / `bren_delete_scenario` / `bren_delete_environment` | Soft-delete (blocked if it would orphan active runs) |
+    | `bren_cancel_run` | Cancel an active run (idempotent) |
+  </Accordion>
+</AccordionGroup>
+
+## Notes
+
+- **Auth is per-request.** The header credential is read on every call; the
+  server stores nothing between requests (stateless transport). Org scoping is
+  enforced identically to REST — you only ever see your own org's data.
+- **Errors carry a code.** A failed tool returns `isError` with a
+  machine-readable `error` field (e.g. `scenario_not_found`, `slug_taken`,
+  `run_not_terminal`) plus a human-readable message — the same envelope as the
+  REST API.
+- **`start_run` and `replay_run` are asynchronous.** They return a `run_id`
+  and a stream URL immediately; poll `bren_get_run` for the terminal state and
+  verdict, or open the stream URL as Server-Sent Events.
+- **No tool argument carries auth.** The org and principal come from the
+  connection headers, never from a tool parameter.

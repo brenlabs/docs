@@ -1,15 +1,14 @@
 ---
 title: "Connecting to the brenlabs MCP"
-description: "Drive brenlabs from Claude — list and create products, agents, and scenarios, start runs, and debug verdicts as MCP tools."
+description: "Drive brenlabs from Claude — list and create agents and scenarios, start runs, and debug verdicts as MCP tools."
 icon: "share-nodes"
 ---
 
 brenlabs exposes its own [Model Context Protocol](https://modelcontextprotocol.io)
 server so you can drive your org from any MCP client — Claude Code, the Claude
-desktop/web app, or your own agent. It speaks **streamable HTTP** and wraps the
-same surface as the REST API: list and fetch products / agents / scenarios /
-runs, create and edit them, start and replay runs, and pull a run's judge
-verdict and debug artifacts.
+desktop/web app, or your own agent. It speaks **streamable HTTP** and covers the
+core surface: list and fetch agents / scenarios / runs, create and edit them,
+start and replay runs, and pull a run's judge verdict and debug artifacts.
 
 <Note>
 This is the inverse of [Wiring MCP servers](/guides/wiring-mcps). That guide
@@ -84,11 +83,9 @@ can gate them correctly:
   <Accordion title="Read (read-only — may auto-approve)" icon="eye">
     | Tool | Purpose |
     |---|---|
-    | `bren_list_products` / `bren_get_product` | Products in the org |
     | `bren_list_agents` / `bren_get_agent` | Agents (configs under test) |
     | `bren_list_scenarios` / `bren_get_scenario` | Scenarios + current version |
     | `bren_list_scenario_versions` / `bren_get_scenario_version` | Scenario version history |
-    | `bren_list_environments` / `bren_get_environment` | Target environments under a product |
     | `bren_list_runs` / `bren_get_run` | Runs, newest first; single run + judge verdict |
     | `bren_get_run_events` / `bren_get_run_logs` / `bren_get_run_analysis` | A run's transcript, stderr, and structured judge analysis |
 
@@ -100,7 +97,7 @@ can gate them correctly:
   <Accordion title="Write — additive (consent on first use)" icon="plus">
     | Tool | Purpose |
     |---|---|
-    | `bren_create_product` / `bren_create_agent` / `bren_create_scenario` / `bren_create_environment` | Create resources |
+    | `bren_create_agent` / `bren_create_scenario` | Create resources |
     | `bren_duplicate_agent` | Clone an agent |
     | `bren_start_run` | Queue a run for an (agent, scenario) pair |
     | `bren_replay_run` | Re-execute a terminal run with re-resolved settings |
@@ -110,8 +107,8 @@ can gate them correctly:
   <Accordion title="Destructive (heavier confirmation)" icon="triangle-exclamation">
     | Tool | Purpose |
     |---|---|
-    | `bren_update_product` / `bren_update_agent` / `bren_update_scenario` / `bren_update_environment` | Edit existing resources (partial update) |
-    | `bren_delete_product` / `bren_delete_agent` / `bren_delete_scenario` / `bren_delete_environment` | Soft-delete (blocked if it would orphan active runs) |
+    | `bren_update_agent` / `bren_update_scenario` | Edit existing resources (partial update) |
+    | `bren_delete_agent` / `bren_delete_scenario` | Soft-delete (blocked if it would orphan active runs) |
     | `bren_cancel_run` | Cancel an active run (idempotent) |
   </Accordion>
 </AccordionGroup>
